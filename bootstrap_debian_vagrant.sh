@@ -27,10 +27,10 @@ VM_NAME=deb71s64-vagrant
 SSH_VMHOST_PORT=9022
 # gnome-keyring doesn't currently support ECDSA
 # https://bugzilla.gnome.org/show_bug.cgi?id=641082
-KEYTYPE=ecdsa
-KEYBITS=521
-#KEYTYPE=rsa
-#KEYBITS=4096
+#KEYTYPE=ecdsa
+#KEYBITS=521
+KEYTYPE=rsa
+KEYBITS=4096
 
 TIMEWAIT_BOOT=15
 TIMEWAIT_HALT=5
