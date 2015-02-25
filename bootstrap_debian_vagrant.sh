@@ -108,12 +108,17 @@ for i in $(seq $TIMEWAIT_BOOT) ; do
 done
 echo
 
+vm_cmd() {
+	vm_cmd="$1"
+	ssh -i $KEYF -p $SSH_VMHOST_PORT -l ${SSH_USERNAME} localhost "$vm_cmd"
+}
+
 echo "Enter user login password 3 times (copying new ssh key over)"
 echo
 # Copy over new SSH keys for passwordless logins
-ssh -i $KEYF -p $SSH_VMHOST_PORT -l ${SSH_USERNAME} localhost "mkdir ~/.ssh ; chmod 700 ~/.ssh "
+vm_cmd "mkdir ~/.ssh ; chmod 700 ~/.ssh "
 scp -i $KEYF -P $SSH_VMHOST_PORT $KEYF.pub ${SSH_USERNAME}@localhost:~/.ssh/$KEYF.pub
-ssh -i $KEYF -p $SSH_VMHOST_PORT -l ${SSH_USERNAME} localhost "chmod 600 ~/.ssh/$KEYF.pub ; cp -a ~/.ssh/$KEYF.pub ~/.ssh/authorized_keys"
+vm_cmd "chmod 600 ~/.ssh/$KEYF.pub ; cp -a ~/.ssh/$KEYF.pub ~/.ssh/authorized_keys"
 
 
 #ssh -p $SSH_VMHOST_PORT -l ${SSH_USERNAME} localhost 'su -l -- aptitude -y install sudo'
@@ -131,18 +136,29 @@ ssh -p $SSH_VMHOST_PORT -l root localhost "aptitude -y install sudo ; echo '${SS
 
 
 # install tools
-ssh -i $KEYF -p $SSH_VMHOST_PORT -l ${SSH_USERNAME} localhost "sudo aptitude -y purge virtualbox-guest-dkms virtualbox-guest-utils virtualbox-guest-x11 virtualbox-ose-guest-x11"
-ssh -i $KEYF -p $SSH_VMHOST_PORT -l ${SSH_USERNAME} localhost "sudo aptitude -y install build-essential dkms linux-headers"
-#ssh -i $KEYF -p $SSH_VMHOST_PORT -l ${SSH_USERNAME} localhost "sudo aptitude -y install ruby rubygems"
-ssh -i $KEYF -p $SSH_VMHOST_PORT -l ${SSH_USERNAME} localhost "sudo aptitude clean"
+vm_cmd "sudo aptitude -y install build-essential dkms"
+vm_cmd "sudo aptitude -y purge virtualbox-guest-dkms virtualbox-guest-utils virtualbox-guest-x11 virtualbox-ose-guest-x11"
+#vm_cmd "sudo aptitude -y install ruby rubygems"
+vm_cmd "sudo aptitude clean"
 
 
 # install virtualbox guest additions
 vboxmanage storageattach ${VM_NAME} --storagectl IDE --port 1 --device 0 --type dvddrive --medium "$VBOX_GUEST_ADDITIONS"
-ssh -i $KEYF -p $SSH_VMHOST_PORT -l ${SSH_USERNAME} localhost "sudo mount /dev/sr0 /media/cdrom0"
-ssh -i $KEYF -p $SSH_VMHOST_PORT -l ${SSH_USERNAME} localhost "sudo /media/cdrom0/VBoxLinuxAdditions.run"
-ssh -i $KEYF -p $SSH_VMHOST_PORT -l ${SSH_USERNAME} localhost "sudo umount /media/cdrom0 ; sudo eject"
-ssh -i $KEYF -p $SSH_VMHOST_PORT -l ${SSH_USERNAME} localhost "sudo poweroff"
+#vm_cmd "sudo mount /dev/sr0 /media/cdrom0"
+vm_cmd "sudo mount /dev/sr0 /media/cdrom0"
+vm_cmd "sudo /media/cdrom0/VBoxLinuxAdditions.run --help"
+vm_cmd "sudo /media/cdrom0/VBoxLinuxAdditions.run"
+vm_cmd "sudo umount /media/cdrom0 ; sudo eject"
+if virtualbox --help | head -1 | grep 4.3.10 > /dev/null ; then
+	# bug in vbox 4.3.10 (the version for ubuntu 14.04) to be worked around
+	vm_cmd "sudo ln -s /opt/VBoxGuestAdditions-4.3.10/lib/VBoxGuestAdditions /usr/lib/VBoxGuestAdditions"
+fi
+
+
+# shutdown
+echo
+vm_cmd "sudo sync"
+vm_cmd "sudo poweroff"
 echo
 echo wait $TIMEWAIT_HALT sec for shutdown
 echo
@@ -152,11 +168,14 @@ for i in $(seq $TIMEWAIT_HALT) ; do
 done
 echo
 
+# Turn it into a real vagrant box
 #vboxmanage controlvm "$VM_NAME" poweroff
 vboxmanage modifyvm "$VM_NAME" --natpf1 delete "guestssh"
 cat Vagrantfile.template | sed "s/USERNAME_SENTINEL/$SSH_USERNAME/" | sed "s/KEYFILE_SENTINEL/$KEYF/" > Vagrantfile
 rm $VM_NAME.box
 vagrant package --base ${VM_NAME} --vagrantfile Vagrantfile --output ${VM_NAME}.box
+vagrant box remove $VM_NAME
+vagrant box add ${VM_NAME} ${VM_NAME}.box
 
 #remove keys, kill agent
 ssh-add -D
@@ -166,6 +185,8 @@ echo
 date --iso-8601=seconds
 echo
 
-echo "You will need to copy both the private and public keys where they will be accessible - usually into each vagrant project that will run with this box."
+echo "Now you need to:"
+#echo " * $ vagrant box add your_new_box_name ${VM_NAME}.box"
+echo " * copy private and public ssh keys where you can use them (probably into your project dir)"
 
 
